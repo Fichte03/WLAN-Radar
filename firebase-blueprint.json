@@ -151,13 +151,19 @@
       "schema": {
         "$ref": "#/entities/WifiSpot"
       },
-      "description": "Community-shared and personal Wi-Fi spots."
+      "description": "Publicly shared community Wi-Fi spots (sharedPublicly == true)."
+    },
+    "/users/{userId}/spots/{spotId}": {
+      "schema": {
+        "$ref": "#/entities/WifiSpot"
+      },
+      "description": "Private user-owned Wi-Fi spots (sharedPublicly == false)."
     },
     "/spot_feedback/{feedbackId}": {
       "schema": {
         "$ref": "#/entities/SpotFeedback"
       },
-      "description": "Community verification votes per user and spot (feedbackId = spotId_userId)."
+      "description": "Community verification votes per user and public spot (feedbackId = spotId_userId)."
     },
     "/users/{userId}/favorites/{spotId}": {
       "schema": {

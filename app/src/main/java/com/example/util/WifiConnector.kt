@@ -1,6 +1,7 @@
 package com.example.util
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -10,6 +11,7 @@ import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSuggestion
 import android.os.Build
 import android.os.Bundle
+import android.os.PersistableBundle
 import android.provider.Settings
 import androidx.annotation.RequiresApi
 import androidx.compose.ui.graphics.ImageBitmap
@@ -31,7 +33,13 @@ object WifiConnector {
     fun copyPasswordToClipboard(context: Context, password: String): Boolean {
         if (password.isBlank()) return false
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
-        val clip = ClipData.newPlainText("WLAN-Passwort", password)
+        val clip = ClipData.newPlainText("WLAN-Passwort", password).apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                description.extras = PersistableBundle().apply {
+                    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                }
+            }
+        }
         clipboard.setPrimaryClip(clip)
         return true
     }
@@ -42,6 +50,16 @@ object WifiConnector {
             copyPasswordToClipboard(context, spot.password)
         } else {
             false
+        }
+
+        // WifiNetworkSuggestion.Builder does not support WEP; route directly to Wi-Fi settings with clipboard copy.
+        if (security == WifiSecurityType.WEP) {
+            val settingsIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                Intent(Settings.Panel.ACTION_WIFI)
+            } else {
+                Intent(Settings.ACTION_WIFI_SETTINGS)
+            }
+            return WifiConnectOutcome.FallbackToSettings(settingsIntent, copied)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -81,13 +99,13 @@ object WifiConnector {
     ): WifiNetworkSuggestion {
         val builder = WifiNetworkSuggestion.Builder().setSsid(ssid)
         when (security) {
-            WifiSecurityType.OPEN -> Unit
+            WifiSecurityType.OPEN, WifiSecurityType.WEP -> Unit
             WifiSecurityType.WPA3 -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && password.isNotBlank()) {
+                if (password.isNotBlank()) {
                     builder.setWpa3Passphrase(password)
                 }
             }
-            WifiSecurityType.WPA2, WifiSecurityType.WEP -> {
+            WifiSecurityType.WPA2 -> {
                 if (password.isNotBlank()) {
                     builder.setWpa2Passphrase(password)
                 }

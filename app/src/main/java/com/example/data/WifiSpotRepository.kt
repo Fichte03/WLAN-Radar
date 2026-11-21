@@ -2,8 +2,8 @@ package com.example.data
 
 import android.content.Context
 import com.example.R
-import com.example.model.VenueCategory
 import com.example.model.SpotFeedback
+import com.example.model.VenueCategory
 import com.example.model.WifiSecurityType
 import com.example.model.WifiSpot
 import com.google.firebase.Firebase
@@ -17,6 +17,7 @@ import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -41,6 +42,13 @@ class WifiSpotRepository(
         val firstWord = raw.substringBefore(' ').trim()
         return firstWord.ifBlank { "Community-Gast" }.take(40)
     }
+
+    private fun spotCollection(uid: String, isPublic: Boolean) =
+        if (isPublic) {
+            db.collection(COLLECTION_WIFI_SPOTS)
+        } else {
+            db.collection(COLLECTION_USERS).document(uid).collection(SUBCOLLECTION_PRIVATE_SPOTS)
+        }
 
     fun observeCommunitySpots(currentUserId: String): Flow<List<WifiSpot>> = flow {
         require(currentUserId.isNotBlank()) { "Ungültige Benutzer-ID" }
@@ -71,28 +79,53 @@ class WifiSpotRepository(
 
     fun observeMySpots(userId: String): Flow<List<WifiSpot>> = flow {
         require(userId.isNotBlank()) { "Ungültige Benutzer-ID" }
-        val path = COLLECTION_WIFI_SPOTS
+        val publicFlow = db.collection(COLLECTION_WIFI_SPOTS)
+            .whereEqualTo("userId", userId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(
+                    WifiSpot::class.java,
+                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                )
+            }
+            .catch { error ->
+                val firestoreError = generateSequence(error) { it.cause }
+                    .filterIsInstance<FirebaseFirestoreException>()
+                    .firstOrNull()
+                if (firestoreError == null && error is CancellationException) throw error
+                val exceptionToLog = firestoreError ?: (error as? Exception)
+                if (exceptionToLog != null && auth.currentUser?.uid == userId) {
+                    handleFirestoreError(exceptionToLog, OperationType.LIST, COLLECTION_WIFI_SPOTS)
+                }
+                throw error
+            }
+
+        val privatePath = "$COLLECTION_USERS/$userId/$SUBCOLLECTION_PRIVATE_SPOTS"
+        val privateFlow = db.collection(COLLECTION_USERS).document(userId)
+            .collection(SUBCOLLECTION_PRIVATE_SPOTS)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(
+                    WifiSpot::class.java,
+                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                )
+            }
+            .catch { error ->
+                val firestoreError = generateSequence(error) { it.cause }
+                    .filterIsInstance<FirebaseFirestoreException>()
+                    .firstOrNull()
+                if (firestoreError == null && error is CancellationException) throw error
+                val exceptionToLog = firestoreError ?: (error as? Exception)
+                if (exceptionToLog != null && auth.currentUser?.uid == userId) {
+                    handleFirestoreError(exceptionToLog, OperationType.LIST, privatePath)
+                }
+                throw error
+            }
+
         emitAll(
-            db.collection(path)
-                .whereEqualTo("userId", userId)
-                .snapshots()
-                .map { snapshot ->
-                    snapshot.toObjects(
-                        WifiSpot::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    )
-                }
-                .catch { error ->
-                    val firestoreError = generateSequence(error) { it.cause }
-                        .filterIsInstance<FirebaseFirestoreException>()
-                        .firstOrNull()
-                    if (firestoreError == null && error is CancellationException) throw error
-                    val exceptionToLog = firestoreError ?: (error as? Exception)
-                    if (exceptionToLog != null && auth.currentUser?.uid == userId) {
-                        handleFirestoreError(exceptionToLog, OperationType.LIST, path)
-                    }
-                    throw error
-                }
+            combine(publicFlow, privateFlow) { publicSpots, privateSpots ->
+                (publicSpots + privateSpots).distinctBy { it.id }
+            }
         )
     }
 
@@ -127,7 +160,7 @@ class WifiSpotRepository(
         require(userId.isNotBlank()) { "Ungültige Benutzer-ID" }
         val path = "users/$userId/favorites"
         emitAll(
-            db.collection("users").document(userId).collection("favorites")
+            db.collection(COLLECTION_USERS).document(userId).collection("favorites")
                 .snapshots()
                 .map { snapshot -> snapshot.documents.map { it.id }.toSet() }
                 .catch { error ->
@@ -170,7 +203,7 @@ class WifiSpotRepository(
             if (latitude != null) require(latitude in -90.0..90.0) { "Ungültiger Breitengrad." }
             if (longitude != null) require(longitude in -180.0..180.0) { "Ungültiger Längengrad." }
 
-            val docRef = db.collection(COLLECTION_WIFI_SPOTS).document()
+            val docRef = spotCollection(uid, sharedPublicly).document()
             docPath = docRef.path
 
             val payload = mutableMapOf<String, Any>(
@@ -203,7 +236,7 @@ class WifiSpotRepository(
     }
 
     suspend fun updateWifiSpot(
-        spotId: String,
+        existingSpot: WifiSpot,
         venueName: String,
         category: VenueCategory,
         ssid: String,
@@ -213,10 +246,10 @@ class WifiSpotRepository(
         notes: String?,
         cityOrArea: String?,
     ): Result<Unit> {
-        var docPath = "$COLLECTION_WIFI_SPOTS/$spotId"
+        var docPath = "$COLLECTION_WIFI_SPOTS/${existingSpot.id}"
         return try {
-            requireUserId()
-            require(spotId.isNotBlank()) { "Ungültige Spot-ID." }
+            val uid = requireUserId()
+            require(existingSpot.id.isNotBlank()) { "Ungültige Spot-ID." }
             val cleanVenue = venueName.trim().take(80)
             val cleanSsid = ssid.trim().take(64)
             val cleanPassword = if (securityType == WifiSecurityType.OPEN) "" else password.trim().take(128)
@@ -226,22 +259,72 @@ class WifiSpotRepository(
             require(cleanVenue.isNotEmpty()) { "Bitte einen Ortsnamen eingeben." }
             require(cleanSsid.isNotEmpty()) { "Bitte den WLAN-Namen (SSID) eingeben." }
 
-            val docRef = db.collection(COLLECTION_WIFI_SPOTS).document(spotId)
-            docPath = docRef.path
+            val wasPublic = existingSpot.sharedPublicly
+            if (wasPublic == sharedPublicly) {
+                val docRef = spotCollection(uid, sharedPublicly).document(existingSpot.id)
+                docPath = docRef.path
+                val updates = mapOf<String, Any>(
+                    "contributorLabel" to contributorDisplayLabel(),
+                    "venueName" to cleanVenue,
+                    "venueCategory" to category.name,
+                    "ssid" to cleanSsid,
+                    "password" to cleanPassword,
+                    "securityType" to securityType.name,
+                    "sharedPublicly" to sharedPublicly,
+                    "notes" to cleanNotes,
+                    "cityOrArea" to cleanArea,
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                )
+                docRef.update(updates).await()
+            } else {
+                // Move atomically between /wifi_spots and /users/{uid}/spots
+                val sourceRef = spotCollection(uid, wasPublic).document(existingSpot.id)
+                val targetRef = spotCollection(uid, sharedPublicly).document(existingSpot.id)
+                docPath = targetRef.path
+                val payload = mutableMapOf<String, Any>(
+                    "userId" to uid,
+                    "contributorLabel" to contributorDisplayLabel(),
+                    "venueName" to cleanVenue,
+                    "venueCategory" to category.name,
+                    "ssid" to cleanSsid,
+                    "password" to cleanPassword,
+                    "securityType" to securityType.name,
+                    "sharedPublicly" to sharedPublicly,
+                    "notes" to cleanNotes,
+                    "cityOrArea" to cleanArea,
+                    "createdAt" to (existingSpot.createdAt ?: FieldValue.serverTimestamp()),
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                )
+                existingSpot.latitude?.let { payload["latitude"] = it }
+                existingSpot.longitude?.let { payload["longitude"] = it }
 
-            val updates = mapOf<String, Any>(
-                "contributorLabel" to contributorDisplayLabel(),
-                "venueName" to cleanVenue,
-                "venueCategory" to category.name,
-                "ssid" to cleanSsid,
-                "password" to cleanPassword,
-                "securityType" to securityType.name,
-                "sharedPublicly" to sharedPublicly,
-                "notes" to cleanNotes,
-                "cityOrArea" to cleanArea,
-                "updatedAt" to FieldValue.serverTimestamp(),
-            )
-            docRef.update(updates).await()
+                val feedbackDocs = if (wasPublic && !sharedPublicly) {
+                    db.collection(COLLECTION_SPOT_FEEDBACK)
+                        .whereEqualTo("spotId", existingSpot.id)
+                        .whereEqualTo("publicFeedback", true)
+                        .get()
+                        .await()
+                        .documents
+                } else {
+                    emptyList()
+                }
+
+                val feedbackChunks = feedbackDocs.chunked(490)
+                if (feedbackChunks.size > 1) {
+                    feedbackChunks.dropLast(1).forEach { chunk ->
+                        db.runBatch { batch ->
+                            chunk.forEach { batch.delete(it.reference) }
+                        }.await()
+                    }
+                }
+                val remainingFeedback = feedbackChunks.lastOrNull().orEmpty()
+
+                db.runBatch { batch ->
+                    remainingFeedback.forEach { batch.delete(it.reference) }
+                    batch.set(targetRef, payload)
+                    batch.delete(sourceRef)
+                }.await()
+            }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -251,12 +334,42 @@ class WifiSpotRepository(
         }
     }
 
-    suspend fun deleteWifiSpot(spotId: String): Result<Unit> {
-        val docPath = "$COLLECTION_WIFI_SPOTS/$spotId"
+    suspend fun deleteWifiSpot(spot: WifiSpot): Result<Unit> {
+        var docPath = "$COLLECTION_WIFI_SPOTS/${spot.id}"
         return try {
-            requireUserId()
-            require(spotId.isNotBlank()) { "Ungültige Spot-ID." }
-            db.collection(COLLECTION_WIFI_SPOTS).document(spotId).delete().await()
+            val uid = requireUserId()
+            require(spot.id.isNotBlank()) { "Ungültige Spot-ID." }
+            val docRef = spotCollection(uid, spot.sharedPublicly).document(spot.id)
+            docPath = docRef.path
+
+            val feedbackDocs = if (spot.sharedPublicly) {
+                db.collection(COLLECTION_SPOT_FEEDBACK)
+                    .whereEqualTo("spotId", spot.id)
+                    .whereEqualTo("publicFeedback", true)
+                    .get()
+                    .await()
+                    .documents
+            } else {
+                emptyList()
+            }
+
+            if (feedbackDocs.isEmpty()) {
+                docRef.delete().await()
+            } else {
+                val feedbackChunks = feedbackDocs.chunked(490)
+                if (feedbackChunks.size > 1) {
+                    feedbackChunks.dropLast(1).forEach { chunk ->
+                        db.runBatch { batch ->
+                            chunk.forEach { batch.delete(it.reference) }
+                        }.await()
+                    }
+                }
+                val remainingFeedback = feedbackChunks.lastOrNull().orEmpty()
+                db.runBatch { batch ->
+                    remainingFeedback.forEach { batch.delete(it.reference) }
+                    batch.delete(docRef)
+                }.await()
+            }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -310,7 +423,7 @@ class WifiSpotRepository(
         return try {
             val uid = requireUserId()
             require(spotId.isNotBlank()) { "Ungültige Spot-ID." }
-            val docRef = db.collection("users").document(uid)
+            val docRef = db.collection(COLLECTION_USERS).document(uid)
                 .collection("favorites").document(spotId)
             docPath = docRef.path
 
@@ -337,5 +450,7 @@ class WifiSpotRepository(
     companion object {
         const val COLLECTION_WIFI_SPOTS = "wifi_spots"
         const val COLLECTION_SPOT_FEEDBACK = "spot_feedback"
+        const val COLLECTION_USERS = "users"
+        const val SUBCOLLECTION_PRIVATE_SPOTS = "spots"
     }
 }

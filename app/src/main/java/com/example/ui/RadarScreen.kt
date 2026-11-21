@@ -332,7 +332,7 @@ fun RadarScreen(
                                 } else null,
                                 onDeleteClick = if (detailItem.isOwnedByCurrentUser) {
                                     {
-                                        viewModel.deleteSpot(detailItem.spot.id) {
+                                        viewModel.deleteSpot(detailItem.spot) {
                                             selectedSpotId = null
                                         }
                                     }
@@ -379,7 +379,7 @@ fun RadarScreen(
                 } else null,
                 onDeleteClick = if (activeDetailItem.isOwnedByCurrentUser) {
                     {
-                        viewModel.deleteSpot(activeDetailItem.spot.id) {
+                        viewModel.deleteSpot(activeDetailItem.spot) {
                             selectedSpotId = null
                         }
                     }
@@ -395,7 +395,7 @@ fun RadarScreen(
             onDismiss = { editingSpot = null },
             onSave = { venueName, category, ssid, password, securityType, sharedPublicly, notes, cityOrArea ->
                 viewModel.updateSpot(
-                    spotId = spotToEdit.id,
+                    existingSpot = spotToEdit,
                     venueName = venueName,
                     category = category,
                     ssid = ssid,

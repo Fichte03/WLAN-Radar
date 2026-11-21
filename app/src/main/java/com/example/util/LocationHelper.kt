@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.Address
 import android.location.Geocoder
 import android.location.Location
 import android.os.Build
@@ -11,10 +12,14 @@ import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
+import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 
 data class UserCoordinates(
@@ -50,6 +55,8 @@ object LocationHelper {
                 longitude = location.longitude,
                 areaLabel = area,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             null
         }
@@ -62,26 +69,41 @@ object LocationHelper {
                 if (!Geocoder.isPresent()) return@withContext null
                 val geocoder = Geocoder(context, Locale.GERMAN)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    var label: String? = null
-                    geocoder.getFromLocation(lat, lng, 1) { addresses ->
-                        val addr = addresses.firstOrNull()
-                        label = listOfNotNull(addr?.subLocality, addr?.locality)
-                            .distinct()
-                            .joinToString(", ")
-                            .takeIf { it.isNotBlank() }
+                    withTimeoutOrNull(3000L) {
+                        suspendCancellableCoroutine { cont ->
+                            geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
+                                override fun onGeocode(addresses: MutableList<Address>) {
+                                    if (cont.isActive) {
+                                        cont.resume(formatAddressLabel(addresses))
+                                    }
+                                }
+
+                                override fun onError(errorMessage: String?) {
+                                    if (cont.isActive) {
+                                        cont.resume(null)
+                                    }
+                                }
+                            })
+                        }
                     }
-                    label
                 } else {
-                    val addr = geocoder.getFromLocation(lat, lng, 1)?.firstOrNull()
-                    listOfNotNull(addr?.subLocality, addr?.locality)
-                        .distinct()
-                        .joinToString(", ")
-                        .takeIf { it.isNotBlank() }
+                    val addresses = geocoder.getFromLocation(lat, lng, 1)
+                    formatAddressLabel(addresses)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 null
             }
         }
+
+    private fun formatAddressLabel(addresses: List<Address>?): String? {
+        val addr = addresses?.firstOrNull() ?: return null
+        return listOfNotNull(addr.subLocality, addr.locality)
+            .distinct()
+            .joinToString(", ")
+            .takeIf { it.isNotBlank() }
+    }
 
     fun distanceMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Float {
         val results = FloatArray(1)

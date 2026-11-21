@@ -272,7 +272,7 @@ class WifiSpotsViewModel(
     }
 
     fun updateSpot(
-        spotId: String,
+        existingSpot: WifiSpot,
         venueName: String,
         category: VenueCategory,
         ssid: String,
@@ -287,7 +287,7 @@ class WifiSpotsViewModel(
         viewModelScope.launch {
             _isSaving.value = true
             val result = repository.updateWifiSpot(
-                spotId = spotId,
+                existingSpot = existingSpot,
                 venueName = venueName,
                 category = category,
                 ssid = ssid,
@@ -307,9 +307,9 @@ class WifiSpotsViewModel(
         }
     }
 
-    fun deleteSpot(spotId: String, onDeleted: () -> Unit = {}) {
+    fun deleteSpot(spot: WifiSpot, onDeleted: () -> Unit = {}) {
         viewModelScope.launch {
-            val result = repository.deleteWifiSpot(spotId)
+            val result = repository.deleteWifiSpot(spot)
             result.onSuccess {
                 _events.tryEmit("WLAN-Spot gelöscht.")
                 onDeleted()

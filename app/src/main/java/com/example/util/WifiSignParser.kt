@@ -8,6 +8,7 @@ data class ParsedWifiScan(
     val securityType: WifiSecurityType = WifiSecurityType.WPA2,
     val candidateLines: List<String> = emptyList(),
     val fromQrCode: Boolean = false,
+    val hasMissingPasswordWarning: Boolean = false,
 )
 
 object WifiSignParser {
@@ -50,15 +51,14 @@ object WifiSignParser {
         }
 
         if (ssid.isNullOrBlank()) return null
-        if (password.isBlank() && security != WifiSecurityType.OPEN) {
-            security = WifiSecurityType.OPEN
-        }
+        val missingPassword = password.isBlank() && security != WifiSecurityType.OPEN
         return ParsedWifiScan(
             ssid = ssid.trim(),
             password = password,
             securityType = security,
             candidateLines = listOfNotNull(ssid.trim(), password.takeIf { it.isNotBlank() }),
             fromQrCode = true,
+            hasMissingPasswordWarning = missingPassword,
         )
     }
 

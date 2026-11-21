@@ -70,6 +70,9 @@ test("Unauthenticated user cannot read or write any collection", async () => {
     unauthDb.collection("wifi_spots").doc("spot_1").set(validSpotPayload(ALICE_UID))
   );
   await assertFails(
+    unauthDb.collection("users").doc(ALICE_UID).collection("spots").get()
+  );
+  await assertFails(
     unauthDb.collection("spot_feedback").where("publicFeedback", "==", true).get()
   );
   await assertFails(
@@ -77,7 +80,7 @@ test("Unauthenticated user cannot read or write any collection", async () => {
   );
 });
 
-test("Authenticated user can create, update, and delete own wifi_spot matching Kotlin schema", async () => {
+test("Authenticated user can create, update, and delete own public wifi_spot", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   const payload = validSpotPayload(ALICE_UID);
 
@@ -90,6 +93,14 @@ test("Authenticated user can create, update, and delete own wifi_spot matching K
       notes: "",
       updatedAt: new Date(Date.now() - 500),
     })
+  );
+
+  // Reject private spot inside public wifi_spots collection
+  await assertFails(
+    aliceDb
+      .collection("wifi_spots")
+      .doc("spot_private_bad")
+      .set(validSpotPayload(ALICE_UID, { sharedPublicly: false }))
   );
 
   // Reject @DocumentId "id" key inside document body
@@ -130,7 +141,7 @@ test("Authenticated user can create, update, and delete own wifi_spot matching K
   await assertSucceeds(aliceDb.collection("wifi_spots").doc("spot_1").delete());
 });
 
-test("Community list query requires sharedPublicly == true or userId == uid; private spots stay isolated", async () => {
+test("Private spots subcollection enforces strict owner isolation and sharedPublicly == false", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await db
@@ -138,28 +149,55 @@ test("Community list query requires sharedPublicly == true or userId == uid; pri
       .doc("public_spot")
       .set(validSpotPayload(BOB_UID, { sharedPublicly: true }));
     await db
-      .collection("wifi_spots")
+      .collection("users")
+      .doc(BOB_UID)
+      .collection("spots")
       .doc("private_bob")
       .set(validSpotPayload(BOB_UID, { sharedPublicly: false }));
   });
 
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
 
-  // Matches Kotlin Radar query: .whereEqualTo("sharedPublicly", true)
+  // Alice can write her own private spot
+  await assertSucceeds(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("spots")
+      .doc("alice_priv")
+      .set(validSpotPayload(ALICE_UID, { sharedPublicly: false }))
+  );
+
+  // Alice cannot write sharedPublicly == true into private subcollection
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("spots")
+      .doc("alice_priv_bad")
+      .set(validSpotPayload(ALICE_UID, { sharedPublicly: true }))
+  );
+
+  // Alice can list her own private spots
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).collection("spots").get()
+  );
+
+  // Alice can query public spots with sharedPublicly == true filter
   await assertSucceeds(
     aliceDb.collection("wifi_spots").where("sharedPublicly", "==", true).get()
   );
 
-  // Matches Kotlin MySpots query: .whereEqualTo("userId", uid)
-  await assertSucceeds(
-    aliceDb.collection("wifi_spots").where("userId", "==", ALICE_UID).get()
-  );
-
-  // Unfiltered list query must be rejected
+  // Unfiltered query on top-level public collection must fail
   await assertFails(aliceDb.collection("wifi_spots").get());
 
-  // Cannot read or modify Bob's private spot
-  await assertFails(aliceDb.collection("wifi_spots").doc("private_bob").get());
+  // Alice cannot read, list, update, or delete Bob's private spot
+  await assertFails(
+    aliceDb.collection("users").doc(BOB_UID).collection("spots").doc("private_bob").get()
+  );
+  await assertFails(
+    aliceDb.collection("users").doc(BOB_UID).collection("spots").get()
+  );
   await assertFails(
     aliceDb.collection("wifi_spots").doc("public_spot").update({
       venueName: "Hijacked",
@@ -226,6 +264,40 @@ test("Spot feedback enforces deterministic ID, parent existence, and owner-only 
     bobDb.collection("spot_feedback").doc(feedbackId).update({
       working: true,
       updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Unrelated user Charlie cannot delete Alice's feedback
+  const charlieDb = testEnv.authenticatedContext("charlie_uid_789").firestore();
+  await assertFails(charlieDb.collection("spot_feedback").doc(feedbackId).delete());
+
+  // Spot owner Bob can query public feedback by spotId and delete stale feedback atomically when moving spot to private
+  await assertSucceeds(
+    bobDb
+      .collection("spot_feedback")
+      .where("spotId", "==", "spot_10")
+      .where("publicFeedback", "==", true)
+      .get()
+  );
+
+  const batch = bobDb.batch();
+  batch.delete(bobDb.collection("spot_feedback").doc(feedbackId));
+  batch.set(
+    bobDb.collection("users").doc(BOB_UID).collection("spots").doc("spot_10"),
+    validSpotPayload(BOB_UID, { sharedPublicly: false })
+  );
+  batch.delete(bobDb.collection("wifi_spots").doc("spot_10"));
+  await assertSucceeds(batch.commit());
+
+  // Feedback cannot be created for a spot that only exists in private storage
+  await assertFails(
+    bobDb.collection("spot_feedback").doc(`spot_10_${BOB_UID}`).set({
+      spotId: "spot_10",
+      userId: BOB_UID,
+      working: true,
+      publicFeedback: true,
+      createdAt: now,
+      updatedAt: now,
     })
   );
 });

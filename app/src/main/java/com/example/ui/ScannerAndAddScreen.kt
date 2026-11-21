@@ -175,7 +175,13 @@ fun ScannerAndAddScreen(
                     result.ssid?.let { ssid = it }
                     result.password?.let { password = it }
                     securityType = result.securityType
-                    viewModel.emitMessage("QR-Code aus Foto übernommen!")
+                    viewModel.emitMessage(
+                        if (result.hasMissingPasswordWarning) {
+                            "QR-Code ohne Passwort erkannt – bitte prüfen!"
+                        } else {
+                            "QR-Code aus Foto übernommen!"
+                        }
+                    )
                 } else {
                     lastOcrScan = result
                     if (ssid.isBlank() && !result.ssid.isNullOrBlank()) ssid = result.ssid
@@ -293,7 +299,13 @@ fun ScannerAndAddScreen(
                                     parsed.password?.let { password = it }
                                     securityType = parsed.securityType
                                     scanPaused = true
-                                    viewModel.emitMessage("WLAN-QR-Code erkannt!")
+                                    viewModel.emitMessage(
+                                        if (parsed.hasMissingPasswordWarning) {
+                                            "QR-Code ohne Passwort erkannt – bitte prüfen!"
+                                        } else {
+                                            "WLAN-QR-Code erkannt!"
+                                        }
+                                    )
                                 },
                                 onOcrDetected = { parsed ->
                                     lastOcrScan = parsed
@@ -389,9 +401,20 @@ fun ScannerAndAddScreen(
 
                     // QR Hit Banner
                     lastQrScan?.let { qr ->
+                        val isWarning = qr.hasMissingPasswordWarning
+                        val bannerBg = if (isWarning) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.primaryContainer
+                        }
+                        val bannerFg = if (isWarning) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        }
                         Surface(
                             shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.primaryContainer,
+                            color = bannerBg,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Row(
@@ -401,19 +424,23 @@ fun ScannerAndAddScreen(
                                 Icon(
                                     imageVector = Icons.Filled.Check,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    tint = bannerFg,
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "QR-Code übernommen: ${qr.ssid.orEmpty()}",
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        color = bannerFg,
                                     )
                                     Text(
-                                        text = "Gib nur noch den Ortsnamen ein (z. B. Barname).",
+                                        text = if (isWarning) {
+                                            "Kein Passwort im QR-Code enthalten – bitte Passwort ergänzen oder auf „Offen“ umstellen."
+                                        } else {
+                                            "Gib nur noch den Ortsnamen ein (z. B. Barname)."
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        color = bannerFg,
                                     )
                                 }
                             }

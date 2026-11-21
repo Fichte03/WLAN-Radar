@@ -76,14 +76,15 @@ service cloud.firestore {
     match /wifi_spots/{spotId} {
       allow get: if isSignedIn() &&
                     isValidId(spotId) &&
-                    (existing().sharedPublicly == true || existing().userId == request.auth.uid);
+                    existing().sharedPublicly == true;
 
       allow list: if isSignedIn() &&
-                     (resource.data.sharedPublicly == true || resource.data.userId == request.auth.uid);
+                     resource.data.sharedPublicly == true;
 
       allow create: if isSignedIn() &&
                        isValidId(spotId) &&
                        incoming().userId == request.auth.uid &&
+                       incoming().sharedPublicly == true &&
                        incoming().keys().hasAll([
                          'userId', 'contributorLabel', 'venueName', 'venueCategory',
                          'ssid', 'password', 'securityType', 'sharedPublicly',
@@ -100,6 +101,7 @@ service cloud.firestore {
       allow update: if isSignedIn() &&
                        isValidId(spotId) &&
                        existing().userId == request.auth.uid &&
+                       incoming().sharedPublicly == true &&
                        isValidWifiSpot(incoming()) &&
                        incoming().userId == existing().userId &&
                        incoming().createdAt == existing().createdAt &&
@@ -115,13 +117,59 @@ service cloud.firestore {
                        existing().userId == request.auth.uid;
     }
 
+    match /users/{userId}/spots/{spotId} {
+      allow get: if isSignedIn() &&
+                    request.auth.uid == userId &&
+                    isValidId(spotId);
+
+      allow list: if isSignedIn() &&
+                     request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(spotId) &&
+                       incoming().userId == userId &&
+                       incoming().sharedPublicly == false &&
+                       incoming().keys().hasAll([
+                         'userId', 'contributorLabel', 'venueName', 'venueCategory',
+                         'ssid', 'password', 'securityType', 'sharedPublicly',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'contributorLabel', 'venueName', 'venueCategory',
+                         'ssid', 'password', 'securityType', 'sharedPublicly',
+                         'notes', 'cityOrArea', 'latitude', 'longitude',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidWifiSpot(incoming());
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(spotId) &&
+                       existing().userId == userId &&
+                       incoming().sharedPublicly == false &&
+                       isValidWifiSpot(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'contributorLabel', 'venueName', 'venueCategory',
+                         'ssid', 'password', 'securityType', 'sharedPublicly',
+                         'notes', 'cityOrArea', 'latitude', 'longitude',
+                         'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(spotId);
+    }
+
     match /spot_feedback/{feedbackId} {
       allow get: if isSignedIn() &&
                     isValidId(feedbackId) &&
-                    (existing().publicFeedback == true || existing().userId == request.auth.uid);
+                    existing().publicFeedback == true;
 
       allow list: if isSignedIn() &&
-                     (resource.data.publicFeedback == true || resource.data.userId == request.auth.uid);
+                     resource.data.publicFeedback == true;
 
       allow create: if isSignedIn() &&
                        isValidId(feedbackId) &&
@@ -149,7 +197,13 @@ service cloud.firestore {
 
       allow delete: if isSignedIn() &&
                        isValidId(feedbackId) &&
-                       existing().userId == request.auth.uid;
+                       (
+                         existing().userId == request.auth.uid ||
+                         (
+                           exists(/databases/$(database)/documents/wifi_spots/$(existing().spotId)) &&
+                           get(/databases/$(database)/documents/wifi_spots/$(existing().spotId)).data.userId == request.auth.uid
+                         )
+                       );
     }
 
     match /users/{userId}/favorites/{spotId} {
@@ -168,7 +222,10 @@ service cloud.firestore {
                        incoming().spotId == spotId &&
                        incoming().keys().hasAll(['userId', 'spotId', 'createdAt']) &&
                        incoming().keys().hasOnly(['userId', 'spotId', 'createdAt']) &&
-                       exists(/databases/$(database)/documents/wifi_spots/$(spotId));
+                       (
+                         exists(/databases/$(database)/documents/wifi_spots/$(spotId)) ||
+                         exists(/databases/$(database)/documents/users/$(userId)/spots/$(spotId))
+                       );
 
       allow update: if false;
 

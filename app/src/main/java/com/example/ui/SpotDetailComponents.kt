@@ -584,36 +584,44 @@ fun WifiSpotDetailContent(
             }
         }
 
-        // Community Verification Section
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Community Verification Section (only for public community spots)
+        if (spot.sharedPublicly) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Geteilt von ${spot.contributorLabel} · Community-Status",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    FilterChip(
+                        selected = item.userVoteWorking == true,
+                        onClick = { onVoteWorking(true) },
+                        label = { Text("Funktioniert (${item.workingCount})") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.ThumbUp, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    FilterChip(
+                        selected = item.userVoteWorking == false,
+                        onClick = { onVoteWorking(false) },
+                        label = { Text("Veraltet (${item.brokenCount})") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.ThumbDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        } else {
             Text(
-                text = "Geteilt von ${spot.contributorLabel} · Community-Status",
+                text = "Privater Spot – nur für dich sichtbar.",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                FilterChip(
-                    selected = item.userVoteWorking == true,
-                    onClick = { onVoteWorking(true) },
-                    label = { Text("Funktioniert (${item.workingCount})") },
-                    leadingIcon = {
-                        Icon(Icons.Filled.ThumbUp, contentDescription = null, modifier = Modifier.size(18.dp))
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                FilterChip(
-                    selected = item.userVoteWorking == false,
-                    onClick = { onVoteWorking(false) },
-                    label = { Text("Veraltet (${item.brokenCount})") },
-                    leadingIcon = {
-                        Icon(Icons.Filled.ThumbDown, contentDescription = null, modifier = Modifier.size(18.dp))
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            }
         }
 
         // Owner Actions

@@ -46,6 +46,16 @@ class WifiSignParserTest {
     }
 
     @Test
+    fun parseQrPayload_warnsWhenEncryptedNetworkMissingPassword() {
+        val parsed = WifiSignParser.parseQrPayload("WIFI:T:WPA;S:Bar_Missing_Pw;;")
+        assertNotNull(parsed)
+        assertEquals("Bar_Missing_Pw", parsed?.ssid)
+        assertEquals("", parsed?.password)
+        assertEquals(WifiSecurityType.WPA2, parsed?.securityType)
+        assertEquals(true, parsed?.hasMissingPasswordWarning)
+    }
+
+    @Test
     fun parseOcrText_extractsMultiLineLabels() {
         val ocr = """
             Netzwerk:

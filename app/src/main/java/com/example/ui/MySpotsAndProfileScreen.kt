@@ -290,7 +290,7 @@ fun MySpotsAndProfileScreen(
                 } else null,
                 onDeleteClick = if (detailItem.isOwnedByCurrentUser) {
                     {
-                        viewModel.deleteSpot(detailItem.spot.id) {
+                        viewModel.deleteSpot(detailItem.spot) {
                             selectedSpotId = null
                         }
                     }
@@ -306,7 +306,7 @@ fun MySpotsAndProfileScreen(
             onDismiss = { editingSpot = null },
             onSave = { venueName, category, ssid, password, securityType, sharedPublicly, notes, cityOrArea ->
                 viewModel.updateSpot(
-                    spotId = spotToEdit.id,
+                    existingSpot = spotToEdit,
                     venueName = venueName,
                     category = category,
                     ssid = ssid,
