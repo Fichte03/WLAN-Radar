@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">WLAN-Radar</string>
+    <string name="nav_discover">Entdecken</string>
+    <string name="nav_scan">Scannen</string>
+    <string name="nav_my_spots">Meine Spots</string>
+    <string name="auth_headline">Freies WLAN finden &amp; teilen</string>
+    <string name="auth_subtitle">Scanne WLAN-Schilder in Bars und Cafés, teile Zugänge automatisch mit der Community und verbinde dich mit einem Tipp.</string>
+    <string name="auth_sign_in_google">Mit Google anmelden</string>
+    <string name="auth_sign_out">Abmelden</string>
+    <string name="cd_hero_illustration">Illustration einer abendlichen Bar mit WLAN-Signalen</string>
+    <string name="cd_wifi_qr_code">Scannbarer WLAN-QR-Code</string>
+    <string name="cd_toggle_password">Passwort ein- oder ausblenden</string>
+    <string name="cd_toggle_favorite">Als Favorit speichern</string>
+    <string name="cd_copy_password">Passwort kopieren</string>
+    <string name="cd_close_dialog">Schließen</string>
+</resources>

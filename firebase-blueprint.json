@@ -1,0 +1,169 @@
+{
+  "entities": {
+    "WifiSpot": {
+      "title": "WifiSpot",
+      "description": "A free Wi-Fi network spot captured by a user and shared with the community.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the spot creator."
+        },
+        "contributorLabel": {
+          "type": "string",
+          "description": "Non-PII display label of the contributor."
+        },
+        "venueName": {
+          "type": "string",
+          "description": "Name of the bar, cafe, restaurant, or public venue."
+        },
+        "venueCategory": {
+          "type": "string",
+          "enum": ["BAR", "CAFE", "RESTAURANT", "HOTEL", "PUBLIC", "OTHER"],
+          "description": "Category of the venue."
+        },
+        "ssid": {
+          "type": "string",
+          "description": "Wi-Fi network name (SSID)."
+        },
+        "password": {
+          "type": "string",
+          "description": "Wi-Fi passphrase (empty string for OPEN networks)."
+        },
+        "securityType": {
+          "type": "string",
+          "enum": ["WPA2", "WPA3", "WEP", "OPEN"],
+          "description": "Wi-Fi security protocol."
+        },
+        "sharedPublicly": {
+          "type": "boolean",
+          "description": "Whether this spot is shared publicly with the community."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional hint where the password was found or speed notes."
+        },
+        "cityOrArea": {
+          "type": "string",
+          "description": "Optional neighborhood or city name."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Optional venue latitude."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Optional venue longitude."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "contributorLabel",
+        "venueName",
+        "venueCategory",
+        "ssid",
+        "password",
+        "securityType",
+        "sharedPublicly",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SpotFeedback": {
+      "title": "SpotFeedback",
+      "description": "Per-user verification status indicating whether a Wi-Fi spot works.",
+      "type": "object",
+      "properties": {
+        "spotId": {
+          "type": "string",
+          "description": "ID of the referenced WifiSpot document."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Authenticated UID of the voter."
+        },
+        "working": {
+          "type": "boolean",
+          "description": "True if the Wi-Fi credentials worked, false if outdated/broken."
+        },
+        "publicFeedback": {
+          "type": "boolean",
+          "description": "Always true so community aggregation queries can list feedback."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when updated."
+        }
+      },
+      "required": [
+        "spotId",
+        "userId",
+        "working",
+        "publicFeedback",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FavoriteSpot": {
+      "title": "FavoriteSpot",
+      "description": "User-scoped bookmark referencing a saved WifiSpot.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase UID."
+        },
+        "spotId": {
+          "type": "string",
+          "description": "Referenced WifiSpot ID."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when bookmarked."
+        }
+      },
+      "required": [
+        "userId",
+        "spotId",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/wifi_spots/{spotId}": {
+      "schema": {
+        "$ref": "#/entities/WifiSpot"
+      },
+      "description": "Community-shared and personal Wi-Fi spots."
+    },
+    "/spot_feedback/{feedbackId}": {
+      "schema": {
+        "$ref": "#/entities/SpotFeedback"
+      },
+      "description": "Community verification votes per user and spot (feedbackId = spotId_userId)."
+    },
+    "/users/{userId}/favorites/{spotId}": {
+      "schema": {
+        "$ref": "#/entities/FavoriteSpot"
+      },
+      "description": "Private user bookmarks of Wi-Fi spots."
+    }
+  }
+}

@@ -1,0 +1,180 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidWifiSpot(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.contributorLabel is string &&
+             data.contributorLabel.size() >= 1 &&
+             data.contributorLabel.size() <= 40 &&
+             data.venueName is string &&
+             data.venueName.size() >= 1 &&
+             data.venueName.size() <= 80 &&
+             data.venueCategory in ['BAR', 'CAFE', 'RESTAURANT', 'HOTEL', 'PUBLIC', 'OTHER'] &&
+             data.ssid is string &&
+             data.ssid.size() >= 1 &&
+             data.ssid.size() <= 64 &&
+             data.password is string &&
+             data.password.size() <= 128 &&
+             data.securityType in ['WPA2', 'WPA3', 'WEP', 'OPEN'] &&
+             data.sharedPublicly is bool &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 240)) &&
+             (!('cityOrArea' in data) || (data.cityOrArea is string && data.cityOrArea.size() <= 80)) &&
+             (!('latitude' in data) || (data.latitude is number && data.latitude >= -90 && data.latitude <= 90)) &&
+             (!('longitude' in data) || (data.longitude is number && data.longitude >= -180 && data.longitude <= 180)) &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidSpotFeedback(data) {
+      return isValidId(data.spotId) &&
+             data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.working is bool &&
+             data.publicFeedback is bool &&
+             data.publicFeedback == true &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidFavoriteSpot(data) {
+      return isValidId(data.spotId) &&
+             data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time;
+    }
+
+    match /wifi_spots/{spotId} {
+      allow get: if isSignedIn() &&
+                    isValidId(spotId) &&
+                    (existing().sharedPublicly == true || existing().userId == request.auth.uid);
+
+      allow list: if isSignedIn() &&
+                     (resource.data.sharedPublicly == true || resource.data.userId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(spotId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'contributorLabel', 'venueName', 'venueCategory',
+                         'ssid', 'password', 'securityType', 'sharedPublicly',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'contributorLabel', 'venueName', 'venueCategory',
+                         'ssid', 'password', 'securityType', 'sharedPublicly',
+                         'notes', 'cityOrArea', 'latitude', 'longitude',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidWifiSpot(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(spotId) &&
+                       existing().userId == request.auth.uid &&
+                       isValidWifiSpot(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'contributorLabel', 'venueName', 'venueCategory',
+                         'ssid', 'password', 'securityType', 'sharedPublicly',
+                         'notes', 'cityOrArea', 'latitude', 'longitude',
+                         'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() &&
+                       isValidId(spotId) &&
+                       existing().userId == request.auth.uid;
+    }
+
+    match /spot_feedback/{feedbackId} {
+      allow get: if isSignedIn() &&
+                    isValidId(feedbackId) &&
+                    (existing().publicFeedback == true || existing().userId == request.auth.uid);
+
+      allow list: if isSignedIn() &&
+                     (resource.data.publicFeedback == true || resource.data.userId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(feedbackId) &&
+                       isValidSpotFeedback(incoming()) &&
+                       incoming().userId == request.auth.uid &&
+                       feedbackId == (incoming().spotId + '_' + request.auth.uid) &&
+                       incoming().keys().hasAll([
+                         'spotId', 'userId', 'working', 'publicFeedback', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'spotId', 'userId', 'working', 'publicFeedback', 'createdAt', 'updatedAt'
+                       ]) &&
+                       exists(/databases/$(database)/documents/wifi_spots/$(incoming().spotId));
+
+      allow update: if isSignedIn() &&
+                       isValidId(feedbackId) &&
+                       existing().userId == request.auth.uid &&
+                       isValidSpotFeedback(incoming()) &&
+                       incoming().spotId == existing().spotId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'working', 'publicFeedback', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() &&
+                       isValidId(feedbackId) &&
+                       existing().userId == request.auth.uid;
+    }
+
+    match /users/{userId}/favorites/{spotId} {
+      allow get: if isSignedIn() &&
+                    request.auth.uid == userId &&
+                    isValidId(spotId);
+
+      allow list: if isSignedIn() &&
+                     request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(spotId) &&
+                       isValidFavoriteSpot(incoming()) &&
+                       incoming().userId == userId &&
+                       incoming().spotId == spotId &&
+                       incoming().keys().hasAll(['userId', 'spotId', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'spotId', 'createdAt']) &&
+                       exists(/databases/$(database)/documents/wifi_spots/$(spotId));
+
+      allow update: if false;
+
+      allow delete: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(spotId);
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "WLAN-Radar",
+  "description": "Community-App zum Erfassen, automatischen Teilen und direkten Verbinden mit freien WLAN-Netzen vor Ort.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
